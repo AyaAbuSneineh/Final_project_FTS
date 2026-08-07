@@ -192,6 +192,75 @@ Caching may be introduced later after workload analysis.
 
 ---
 
+# Primary Key
+
+### Decision
+
+Use BIGINT GENERATED ALWAYS AS IDENTITY as the primary key.
+
+### Reason
+
+- Faster inserts than UUID.
+- Smaller indexes.
+- Better B-tree index performance.
+- Better cache locality.
+- Useful for deterministic ordering together with timestamp.
+- Overflow is practically impossible for this project when using BIGINT.
+
+# Cursor-based Pagination
+
+### Decision
+
+Use cursor-based pagination instead of OFFSET pagination.
+
+### Reason
+
+- OFFSET becomes slower as the dataset grows.
+- Better scalability with millions of log records.
+- Stable pagination even while new logs are being inserted.
+- Cursor will be based on (timestamp, id).
+
+## ADR-006: Retention Strategy
+
+### Decision
+
+Use weekly time-based partitioning combined with a hybrid retention strategy. Logs will be stored in weekly partitions, and a background retention worker will periodically monitor storage size, log count, and data age. When retention limits are exceeded, the system will remove the oldest data first until the configured limits are restored.
+
+### Reason
+
+A time-only retention policy is not enough because log volume can vary significantly. Weekly partitions provide a balance between performance and manageability, allowing efficient cleanup by removing old partitions instead of performing expensive large DELETE operations. The hybrid approach prevents uncontrolled database growth while maintaining ingestion performance.
+
+# Database Connection Management
+
+### Decision
+
+Use a PostgreSQL connection pool with a controlled number of connections combined with bulk inserts for log ingestion.
+
+### Reason
+
+Opening a new database connection for every request is expensive and can overload PostgreSQL under high ingestion rates. A limited connection pool provides controlled concurrency while bulk inserts reduce database round trips and improve throughput. The pool size will be tuned through load testing based on system resource limits.
+
+# Application Layer Separation
+
+### Decision
+
+Use a layered architecture where HTTP handling, validation, business logic, and database access are separated.
+
+### Reason
+
+Separating responsibilities improves maintainability, testing, and scalability. Validation is performed before database insertion to allow partial batch acceptance, while database constraints provide an additional safety layer.
+
+## Aggregation Design
+
+### Decision
+
+Use real-time aggregation queries directly on the logs table for the current system design. The aggregation endpoint will calculate log counts dynamically based on the requested time range, bucket size, and grouping dimensions.
+
+### Reason
+
+The expected workload is around one million log records with a limited aggregation query rate, so real-time aggregation provides a simpler design while maintaining up-to-date results. Additional complexity from maintaining pre-aggregated tables is not required at this scale. If future load testing shows that aggregation performance is insufficient, rollup tables can be introduced as an optimization.
+
+
 # Reliability
 
 The service should never acknowledge logs before they are safely persisted.
