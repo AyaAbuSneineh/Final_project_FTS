@@ -1,6 +1,6 @@
 import express from "express";
 
-import { healthCheck } from "./controllers/health-controller.js";
+import { healthCheck } from "./controllers/health_controller.js";
 
 export const app = express();
 

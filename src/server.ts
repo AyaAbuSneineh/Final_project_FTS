@@ -3,7 +3,7 @@ import "dotenv/config";
 import { app } from "./app.js";
 import { pool } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
-import { checkDatabaseConnection } from "./services/health-service.js";
+import { checkDatabaseConnection } from "./services/health_service.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 
