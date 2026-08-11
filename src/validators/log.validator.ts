@@ -13,10 +13,13 @@ const VALID_LEVELS: LogLevel[] = [
 ];
 
 export function isValidIsoTimestamp(value: string): boolean {
+//Regular expression to match ISO 8601 timestamps with optional milliseconds and timezone offset
   const isoTimestampPattern =
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
-
-  if (!isoTimestampPattern.test(value)) {
+    // year - month - day T hour: minute: second . milliseconds Z or +hh:mm or -hh:mm
+    // (?:\.\d{1,3})? is optional allowing for milliseconds with 1,2,3 digits
+    // (?:Z|[+-]\d{2}:\d{2}) timezone offset can be Z or +hh:mm or -hh:mm
+  if (!isoTimestampPattern.test(value)) {  // like match in python
     return false;
   }
 

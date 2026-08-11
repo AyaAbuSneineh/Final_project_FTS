@@ -75,7 +75,7 @@ export function validateLogQuery(query: unknown): LogQueryFilters {
 
   // since
   if (params.since !== undefined) {
-    if (typeof params.since !== "string" || isValidIsoTimestamp(params.since)){
+    if (typeof params.since !== "string" || !isValidIsoTimestamp(params.since)){
       throw new BadRequestError("since must be a valid ISO 8601 timestamp");
     }
 
@@ -88,6 +88,10 @@ export function validateLogQuery(query: unknown): LogQueryFilters {
       throw new BadRequestError("until must be a valid ISO 8601 timestamp");
     }
     filters.until = new Date(params.until);
+  }
+  if (filters.since !== undefined && filters.until !== undefined && 
+    filters.until.getTime() < filters.since.getTime()){
+    throw new BadRequestError("until must not be earlier than since");
   }
 
   // q

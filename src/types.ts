@@ -59,7 +59,7 @@ export interface LogCursor {
 
 export interface LogQueryResult {
   logs: QueriedLog[];
-  nextCursor: string | null;
+  next_cursor: string | null;
 }
 
 export interface QueriedLog {
