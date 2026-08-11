@@ -31,3 +31,42 @@ export interface IngestLogsResult {
   accepted: number;
   rejected: RejectedLog[];
 }
+
+
+export interface AttributeFilter {
+  key: string;
+  value: string;
+}
+
+export interface LogQueryFilters {
+  service?: string;
+  level?: LogLevel;
+  since?: Date;
+  until?: Date;
+  q?: string;
+
+  attributes: AttributeFilter[];
+
+  limit: number;
+
+  cursor?: LogCursor;
+}
+
+export interface LogCursor {
+  timestamp: Date;
+  id: string;
+}
+
+export interface LogQueryResult {
+  logs: QueriedLog[];
+  nextCursor: string | null;
+}
+
+export interface QueriedLog {
+  id: string;
+  timestamp: Date;
+  level: LogLevel;
+  service: string;
+  message: string;
+  attributes: LogAttributes;
+}

@@ -12,7 +12,7 @@ const VALID_LEVELS: LogLevel[] = [
   "error",
 ];
 
-function isValidIsoTimestamp(value: string): boolean {
+export function isValidIsoTimestamp(value: string): boolean {
   const isoTimestampPattern =
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -23,7 +23,7 @@ function isValidIsoTimestamp(value: string): boolean {
   return !Number.isNaN(new Date(value).getTime());
 }
 
-function isValidLevel(value: any): value is LogLevel {
+export function isValidLevel(value: any): value is LogLevel {
   return (
     typeof value === "string" &&
     VALID_LEVELS.includes(value as LogLevel)
