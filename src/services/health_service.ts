@@ -1,6 +1,14 @@
 import { pool } from "../db/client.js";
+import { ServiceUnavailableError } from "../errors.js";
 
-// Function to check the database connection by executing a simple query
 export async function checkDatabaseConnection(): Promise<void> {
-  await pool.query("SELECT 1"); 
+  try {
+    await pool.query("SELECT 1");
+  } catch (error) {
+    console.error("Real database error:", error);
+
+    throw new ServiceUnavailableError(
+      "database unavailable",
+    );
+  }
 }
