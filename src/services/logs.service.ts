@@ -2,10 +2,12 @@ import { BadRequestError } from "../errors.js";
 import { insertLogs } from "../repositories/logs.repository.js";
 import { validateLogEntry } from "../validators/log.validator.js";
 
-import type {IngestLogsResult,RejectedLog,ValidLogInput,} from "../types.js";
+import type {IngestLogsResult,RejectedLog,ValidLogInput,AggregateQueryFilters,AggregateQueryResult} from "../types.js";
 
 import { findLogs } from "../repositories/logs.repository.js";
 import { encodeCursor } from "../utils/cursor.js";
+import { aggregateLogs } from "../repositories/logs.repository.js";
+
 
 import type {
   LogQueryFilters,
@@ -85,5 +87,16 @@ export async function getLogs(filters: LogQueryFilters): Promise<LogQueryResult>
   return {
     logs: resultLogs,
     next_cursor: nextCursor,
+  };
+}
+
+export async function getLogAggregation(filters: AggregateQueryFilters): Promise<AggregateQueryResult> {
+  const rows = await aggregateLogs(filters);
+  return {
+    buckets: rows.map((row) => ({
+      start: row.bucket_start.toISOString(),
+      group: row.group,
+      count: row.count,
+    })),
   };
 }

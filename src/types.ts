@@ -70,3 +70,35 @@ export interface QueriedLog {
   message: string;
   attributes: LogAttributes;
 }
+
+export type AggregateBucket = "1m"
+  | "5m"
+  | "1h"
+  | "1d";
+
+export type AggregateGroupBy = "service"
+  | "level";
+
+export interface AggregateQueryFilters {
+  since: Date; 
+  until: Date;
+  bucket: AggregateBucket;
+
+  service?: string;
+  level?: LogLevel;
+  q?: string;
+
+  attributes: AttributeFilter[];
+
+  groupBy?: AggregateGroupBy;
+}
+
+export interface AggregateBucketResult {
+  start: string;
+  group: string | null;
+  count: number;
+}
+
+export interface AggregateQueryResult {
+  buckets: AggregateBucketResult[];
+}
