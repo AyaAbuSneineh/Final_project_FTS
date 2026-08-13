@@ -6,13 +6,51 @@ import { buildLogConditions } from "../query-builders/logs.query-builder.js";
 import {desc,asc,count,sql} from "drizzle-orm";
 
 import {buildAggregateConditions,buildBucketExpression} from "../query-builders/aggregation.query-builder.js";
-
+import { pool } from "../db/client.js";
 
 export async function insertLogs(entries: ValidLogInput[]): Promise<void> {
   if (entries.length === 0) {
     return;
   }
-  await db.insert(logs).values(entries);
+  //simple query await db.insert(logs).values(entries);
+
+  const timestamps = entries.map((entry) =>
+    entry.timestamp.toISOString()
+  );
+
+  const levels = entries.map((entry) => entry.level);
+  const services = entries.map((entry) => entry.service);
+  const messages = entries.map((entry) => entry.message);
+  const attributes = entries.map((entry) =>
+    JSON.stringify(entry.attributes)
+  );
+
+  await pool.query(
+    `
+      INSERT INTO logs (
+        timestamp,
+        level,
+        service,
+        message,
+        attributes
+      )
+      SELECT *
+      FROM unnest(
+        $1::timestamptz[],
+        $2::text[],
+        $3::text[],
+        $4::text[],
+        $5::jsonb[]
+      )
+    `,
+    [
+      timestamps,
+      levels,
+      services,
+      messages,
+      attributes,
+    ],
+  );
 }
 
 export async function findLogs(filters: LogQueryFilters){

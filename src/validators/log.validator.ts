@@ -12,6 +12,9 @@ const VALID_LEVELS: LogLevel[] = [
   "error",
 ];
 
+const ISO_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+
 export function isValidIsoTimestamp(value: string): boolean {
 //Regular expression to match ISO 8601 timestamps with optional milliseconds and timezone offset
   const isoTimestampPattern =
@@ -26,7 +29,21 @@ export function isValidIsoTimestamp(value: string): boolean {
   return !Number.isNaN(new Date(value).getTime());
 }
 
-export function isValidLevel(value: any): value is LogLevel {
+export function parseIsoTimestamp(value: string): Date | null {
+  if (!ISO_TIMESTAMP_PATTERN.test(value)) {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+
+  if (Number.isNaN(timestamp.getTime())) {
+    return null;
+  }
+
+  return timestamp;
+}
+
+export function isValidLevel(value: unknown): value is LogLevel {
   return (
     typeof value === "string" &&
     VALID_LEVELS.includes(value as LogLevel)
@@ -51,7 +68,7 @@ function validateAttributes(value: unknown): value is LogAttributes {
   return true;
 }
 
-export function validateLogEntry(value: unknown,): LogValidationResult {
+export function validateLogEntry(value: unknown,fiveMinutesFromNow: number): LogValidationResult {
   if (typeof value !== "object" ||value === null ||Array.isArray(value)
   ) {
     return {
@@ -69,16 +86,14 @@ export function validateLogEntry(value: unknown,): LogValidationResult {
       reason: "timestamp is required and must be a string",
     };
   }
-  if (!isValidIsoTimestamp(log.timestamp)) {
+  const timestamp = parseIsoTimestamp(log.timestamp)
+  if (timestamp === null) {
     return {
       valid: false,
       reason: "timestamp must be a valid ISO 8601 timestamp",
     };
   }
 
-  const timestamp = new Date(log.timestamp);
-  const fiveMinutesFromNow =
-    Date.now() + 5 * 60 * 1000;
 
   if (timestamp.getTime() > fiveMinutesFromNow) {
     return {
