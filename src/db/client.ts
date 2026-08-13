@@ -17,7 +17,7 @@ if (!databaseUrl) {
 export const pool = new Pool({
   connectionString: databaseUrl, // Use this link to find out where PostgreSQL is located and how it is recognized
 
-  max: 20, // Maximum allowed connections
+  max: 5, // Maximum allowed connections
 
   idleTimeoutMillis: 30_000,
 

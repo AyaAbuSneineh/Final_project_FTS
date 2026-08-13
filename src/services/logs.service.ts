@@ -1,21 +1,21 @@
 import { BadRequestError } from "../errors.js";
-import { insertLogs } from "../repositories/logs.repository.js";
+import {
+  aggregateLogs,
+  findLogs,
+  insertLogs,
+} from "../repositories/logs.repository.js";
+import { encodeCursor } from "../utils/cursor.js";
 import { validateLogEntry } from "../validators/log.validator.js";
 
-import type {IngestLogsResult,RejectedLog,ValidLogInput,AggregateQueryFilters,AggregateQueryResult} from "../types.js";
-
-import { findLogs } from "../repositories/logs.repository.js";
-import { encodeCursor } from "../utils/cursor.js";
-import { aggregateLogs } from "../repositories/logs.repository.js";
-
-
-import { performance } from "node:perf_hooks";
-
-
 import type {
+  AggregateQueryFilters,
+  AggregateQueryResult,
+  IngestLogsResult,
   LogQueryFilters,
   LogQueryResult,
   QueriedLog,
+  RejectedLog,
+  ValidLogInput,
 } from "../types.js";
 
 export async function ingestLogBatch(body: unknown,): Promise<IngestLogsResult> {
@@ -32,7 +32,6 @@ export async function ingestLogBatch(body: unknown,): Promise<IngestLogsResult> 
   const validLogs: ValidLogInput[] = [];
   const rejectedLogs: RejectedLog[] = [];
   const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
-  const validationStart = performance.now();
 
   for (let index = 0; index < requestBody.logs.length;index++){
     const result = validateLogEntry(requestBody.logs[index],fiveMinutesFromNow);
@@ -43,7 +42,6 @@ export async function ingestLogBatch(body: unknown,): Promise<IngestLogsResult> 
       rejectedLogs.push({index,reason: result.reason,});
     }
   }
-  const validationEnd = performance.now();
 
   if (validLogs.length === 0) {
     throw new BadRequestError("all log entries were rejected",
@@ -53,19 +51,7 @@ export async function ingestLogBatch(body: unknown,): Promise<IngestLogsResult> 
       },
     );
   }
-  const insertStart = performance.now();
-  try {
-    await insertLogs(validLogs);
-  } catch (error) {
-    console.error("[INSERT ERROR]", error);
-    throw error;
-  }
-  const insertEnd = performance.now();
-  console.log(
-  `[PERF] logs=${validLogs.length} ` +
-  `validation=${(validationEnd - validationStart).toFixed(2)}ms ` +
-  `insert=${(insertEnd - insertStart).toFixed(2)}ms`
-  );
+  await insertLogs(validLogs);
   return {
     accepted: validLogs.length,
     rejected: rejectedLogs,
