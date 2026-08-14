@@ -4,6 +4,7 @@ import { app } from "./app.js";
 import { pool } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
 import { checkDatabaseConnection } from "./services/health_service.js";
+import { startRetentionWorker } from "./services/retention.service.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 
@@ -16,6 +17,8 @@ async function startServer(): Promise<void> {
     await runMigrations();
 
     console.log("Database migrations applied");
+
+    startRetentionWorker();
 
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server listening on port ${PORT}`);

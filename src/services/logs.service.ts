@@ -1,8 +1,9 @@
 import { BadRequestError } from "../errors.js";
+import { ingestionConfig } from "../config/ingestion.config.js";
+import { enqueueLogsForInsert } from "./ingestion_batcher.service.js";
 import {
   aggregateLogs,
   findLogs,
-  insertLogs,
 } from "../repositories/logs.repository.js";
 import { encodeCursor } from "../utils/cursor.js";
 import { validateLogEntry } from "../validators/log.validator.js";
@@ -29,12 +30,22 @@ export async function ingestLogBatch(body: unknown,): Promise<IngestLogsResult> 
     throw new BadRequestError("request body must contain a logs array");
   }
 
+  if (requestBody.logs.length > ingestionConfig.maxLogsPerBatch) {
+    throw new BadRequestError(
+      `logs array must contain at most ${ingestionConfig.maxLogsPerBatch} entries`,
+    );
+  }
+
   const validLogs: ValidLogInput[] = [];
   const rejectedLogs: RejectedLog[] = [];
   const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
 
   for (let index = 0; index < requestBody.logs.length;index++){
-    const result = validateLogEntry(requestBody.logs[index],fiveMinutesFromNow);
+    const result = validateLogEntry(
+      requestBody.logs[index],
+      fiveMinutesFromNow,
+      ingestionConfig,
+    );
 
     if (result.valid) {
       validLogs.push(result.log);
@@ -51,7 +62,8 @@ export async function ingestLogBatch(body: unknown,): Promise<IngestLogsResult> 
       },
     );
   }
-  await insertLogs(validLogs);
+  await enqueueLogsForInsert(validLogs);
+
   return {
     accepted: validLogs.length,
     rejected: rejectedLogs,
@@ -99,7 +111,7 @@ export async function getLogAggregation(filters: AggregateQueryFilters): Promise
     buckets: rows.map((row) => ({
       start: row.bucket_start.toISOString(),
       group: row.group,
-      count: row.count,
+      count: Number(row.count),
     })),
   };
 }

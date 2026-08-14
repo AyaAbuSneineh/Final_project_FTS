@@ -5,6 +5,7 @@ import {
   index,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -51,6 +52,34 @@ export const logs = pgTable("logs",{
     index("logs_timestamp_id_idx").on(
       table.timestamp.desc(),
       table.id.desc(),
+    ),
+  ],
+);
+
+export const logCountRollups1m = pgTable("log_count_rollups_1m", {
+    bucketStart: timestamp("bucket_start", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+
+    service: text("service").notNull(),
+
+    level: text("level").$type<LogLevel>().notNull(),
+
+    logCount: bigint("log_count", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "log_count_rollups_1m_pk",
+      columns: [
+        table.bucketStart,
+        table.service,
+        table.level,
+      ],
+    }),
+
+    index("log_count_rollups_1m_bucket_idx").on(
+      table.bucketStart,
     ),
   ],
 );

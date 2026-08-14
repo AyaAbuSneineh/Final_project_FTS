@@ -4,6 +4,7 @@ import type {
   LogAttributes,
   LogLevel,
 } from "../types.js";
+import type { IngestionConfig } from "../config/ingestion.config.js";
 
 const VALID_LEVELS: LogLevel[] = [
   "debug",
@@ -50,25 +51,54 @@ export function isValidLevel(value: unknown): value is LogLevel {
   );
 }
 
-function validateAttributes(value: unknown): value is LogAttributes {
+function validateAttributes(value: unknown, config: IngestionConfig): string | null {
   if (typeof value !== "object" ||value === null ||Array.isArray(value)) {
-    return false;
+    return "attributes must be a flat object containing only string, number, or boolean values";
   }
 
-  for (const attributeValue of Object.values(value)) {
+  const entries = Object.entries(value);
+
+  if (entries.length > config.maxAttributesPerLog) {
+    return `attributes must contain at most ${config.maxAttributesPerLog} keys`;
+  }
+
+  for (const [attributeKey, attributeValue] of entries) {
+    if (attributeKey.length === 0) {
+      return "attribute keys must be non-empty strings";
+    }
+
+    if (attributeKey.length > config.maxAttributeKeyLength) {
+      return `attribute keys must be at most ${config.maxAttributeKeyLength} characters`;
+    }
+
     if (
       typeof attributeValue !== "string" &&
       typeof attributeValue !== "number" &&
       typeof attributeValue !== "boolean"
     ) {
-      return false;
+      return "attributes must be a flat object containing only string, number, or boolean values";
+    }
+
+    if (typeof attributeValue === "number" && !Number.isFinite(attributeValue)) {
+      return "attribute number values must be finite";
+    }
+
+    if (
+      typeof attributeValue === "string" &&
+      attributeValue.length > config.maxAttributeStringValueLength
+    ) {
+      return `attribute string values must be at most ${config.maxAttributeStringValueLength} characters`;
     }
   }
 
-  return true;
+  return null;
 }
 
-export function validateLogEntry(value: unknown,fiveMinutesFromNow: number): LogValidationResult {
+export function validateLogEntry(
+  value: unknown,
+  fiveMinutesFromNow: number,
+  config: IngestionConfig,
+): LogValidationResult {
   if (typeof value !== "object" ||value === null ||Array.isArray(value)
   ) {
     return {
@@ -118,6 +148,13 @@ export function validateLogEntry(value: unknown,fiveMinutesFromNow: number): Log
     };
   }
 
+  if (log.service.length > config.maxServiceLength) {
+    return {
+      valid: false,
+      reason: `service must be at most ${config.maxServiceLength} characters`,
+    };
+  }
+
   // message
   if (typeof log.message !== "string" ||log.message.length === 0){
     return {
@@ -126,15 +163,23 @@ export function validateLogEntry(value: unknown,fiveMinutesFromNow: number): Log
     };
   }
 
+  if (log.message.length > config.maxMessageLength) {
+    return {
+      valid: false,
+      reason: `message must be at most ${config.maxMessageLength} characters`,
+    };
+  }
+
   // attributes
   //const attributes = log.attributes ?? {};
   const attributes = log.attributes === undefined ? {} : log.attributes;
 
-  if (!validateAttributes(attributes)) {
+  const attributeValidationError = validateAttributes(attributes, config);
+
+  if (attributeValidationError !== null) {
     return {
       valid: false,
-      reason:
-        "attributes must be a flat object containing only string, number, or boolean values",
+      reason: attributeValidationError,
     };
   }
 
@@ -143,7 +188,7 @@ export function validateLogEntry(value: unknown,fiveMinutesFromNow: number): Log
     level: log.level,
     service: log.service,
     message: log.message,
-    attributes,
+    attributes: attributes as LogAttributes,
   };
 
   return {
