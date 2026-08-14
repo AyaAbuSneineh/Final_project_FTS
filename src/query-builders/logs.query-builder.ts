@@ -1,7 +1,8 @@
-import {and,eq,gte,ilike,lt,or,sql,type SQL,} from "drizzle-orm";
+import {and,eq,gte,lt,or,sql,type SQL,} from "drizzle-orm";
 
 import { logs } from "../db/schema.js";
 import type { LogQueryFilters } from "../types.js";
+import { escapeLikePattern } from "../utils/sql.js";
 
 export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
     // SQL[] store the conditions for the query
@@ -32,10 +33,13 @@ export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
   }
 
   if (filters.q !== undefined) {
-    conditions.push( 
-      ilike(logs.message, `%${filters.q}%`), // expression logs.message ILIKE '%filters.q%'
-    ); // ilike is case-insensitive pattern matching in SQL, similar to LIKE but ignores case
-    // we use the % wildcard to match any sequence of characters before and after the search term
+    const escapedQuery = escapeLikePattern(filters.q);
+
+    conditions.push(
+      // Escape % / _ / \ in the user's search term so a literal "%" or "_" in q is
+      // matched as a literal character instead of behaving as a wildcard.
+      sql`${logs.message} ILIKE ${`%${escapedQuery}%`} ESCAPE '\\'`,
+    );
   }
   
   for (const attribute of filters.attributes) {

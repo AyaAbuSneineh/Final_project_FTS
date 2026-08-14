@@ -53,6 +53,21 @@ export const logs = pgTable("logs",{
       table.timestamp.desc(),
       table.id.desc(),
     ),
+
+    // Supports GET /logs and /logs/aggregate filtered by `service` with a wide or
+    // absent time range (legal per the API contract) without falling back to a
+    // full index scan of logs_timestamp_id_idx.
+    index("logs_service_timestamp_id_idx").on(
+      table.service,
+      table.timestamp.desc(),
+      table.id.desc(),
+    ),
+
+    // Supports the `q` substring filter (ILIKE '%term%') via trigram similarity
+    // instead of a full scan of the filtered row set. Requires the pg_trgm
+    // extension, enabled in the migration.
+    index("logs_message_trgm_idx")
+      .using("gin", sql`${table.message} gin_trgm_ops`),
   ],
 );
 

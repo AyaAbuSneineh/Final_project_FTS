@@ -5,6 +5,7 @@ export interface IngestionConfig {
   flushIntervalMs: number;
   flushMaxLogs: number;
   maxBufferedLogs: number;
+  maxConcurrentFlushes: number;
   maxServiceLength: number;
   maxMessageLength: number;
   maxAttributesPerLog: number;
@@ -18,6 +19,10 @@ const DEFAULT_BATCHING_ENABLED = true;
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
 const DEFAULT_FLUSH_MAX_LOGS = 5_000;
 const DEFAULT_MAX_BUFFERED_LOGS = 100_000;
+// A single Postgres CPU core cannot truly parallelize CPU-bound work, so this
+// stays small: enough to stop one slow flush from head-of-line-blocking every
+// other request, not so many that they just add lock/context-switch contention.
+const DEFAULT_MAX_CONCURRENT_FLUSHES = 4;
 const DEFAULT_MAX_SERVICE_LENGTH = 256;
 const DEFAULT_MAX_MESSAGE_LENGTH = 8_192;
 const DEFAULT_MAX_ATTRIBUTES_PER_LOG = 50;
@@ -91,6 +96,10 @@ function getIngestionConfig(): IngestionConfig {
     maxBufferedLogs: parsePositiveIntegerEnv(
       "INGEST_MAX_BUFFERED_LOGS",
       DEFAULT_MAX_BUFFERED_LOGS,
+    ),
+    maxConcurrentFlushes: parsePositiveIntegerEnv(
+      "INGEST_FLUSH_CONCURRENCY",
+      DEFAULT_MAX_CONCURRENT_FLUSHES,
     ),
     maxServiceLength: parsePositiveIntegerEnv(
       "MAX_SERVICE_LENGTH",

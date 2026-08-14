@@ -14,16 +14,16 @@ const pendingInserts: PendingInsert[] = [];
 
 let bufferedLogCount = 0;
 let flushTimer: NodeJS.Timeout | null = null;
-let flushRunning = false;
+let activeFlushWorkers = 0;
 
 function scheduleFlush(): void {
-  if (flushTimer !== null || flushRunning) {
+  if (flushTimer !== null) {
     return;
   }
 
   flushTimer = setTimeout(() => {
     flushTimer = null;
-    void flushPendingLogs();
+    startFlushWorkers();
   }, ingestionConfig.flushIntervalMs);
 
   flushTimer.unref();
@@ -60,16 +60,20 @@ function takeFlushBatch(): {
   };
 }
 
-async function flushPendingLogs(): Promise<void> {
-  if (flushRunning || pendingInserts.length === 0) {
-    return;
-  }
-
-  flushRunning = true;
+// Each worker independently drains the shared queue until it's empty. Dequeuing
+// (takeFlushBatch) is synchronous, so concurrent workers can never take the same
+// items — only the `await insertLogs(...)` below actually runs concurrently across
+// workers, each on its own pool connection.
+async function runFlushWorker(): Promise<void> {
+  activeFlushWorkers++;
 
   try {
     while (pendingInserts.length > 0) {
       const batch = takeFlushBatch();
+
+      if (batch.items.length === 0) {
+        break;
+      }
 
       try {
         await insertLogs(batch.logs);
@@ -84,11 +88,21 @@ async function flushPendingLogs(): Promise<void> {
       }
     }
   } finally {
-    flushRunning = false;
+    activeFlushWorkers--;
+  }
+}
 
-    if (pendingInserts.length > 0) {
-      scheduleFlush();
-    }
+function startFlushWorkers(): void {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+
+  while (
+    activeFlushWorkers < ingestionConfig.maxConcurrentFlushes &&
+    pendingInserts.length > 0
+  ) {
+    void runFlushWorker();
   }
 }
 
@@ -112,15 +126,19 @@ export async function enqueueLogsForInsert(logs: ValidLogInput[]): Promise<void>
     bufferedLogCount += logs.length;
 
     if (bufferedLogCount >= ingestionConfig.flushMaxLogs) {
-      if (flushTimer !== null) {
-        clearTimeout(flushTimer);
-        flushTimer = null;
-      }
-
-      void flushPendingLogs();
+      startFlushWorkers();
       return;
     }
 
     scheduleFlush();
   });
+}
+
+/** Drains all buffered logs, waiting for every in-flight and queued insert to settle. Used for graceful shutdown. */
+export async function drainPendingInserts(): Promise<void> {
+  startFlushWorkers();
+
+  while (pendingInserts.length > 0 || activeFlushWorkers > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 }
