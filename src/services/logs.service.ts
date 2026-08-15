@@ -62,6 +62,7 @@ export async function ingestLogBatch(body: unknown,): Promise<IngestLogsResult> 
       },
     );
   }
+  // validLogs is a non-empty array of ValidLogInput objects
   await enqueueLogsForInsert(validLogs);
 
   return {

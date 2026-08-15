@@ -68,6 +68,22 @@ export const logs = pgTable("logs",{
     // extension, enabled in the migration.
     index("logs_message_trgm_idx")
       .using("gin", sql`${table.message} gin_trgm_ops`),
+
+    // attr.<key> filters (`attributes ->> key = value`) aren't indexable in general —
+    // arbitrary keys would need a GIN/EAV redesign, which isn't justified without
+    // evidence of which keys are actually queried. `user_id` and `region` are the
+    // two keys the API contract itself uses in its documented examples (the `q`
+    // param table's example is literally `attr.user_id=42`), so they're the best
+    // available signal for which attr filters are likely to be exercised. A plain
+    // B-tree expression index is correct here (not GIN) since the filter is exact
+    // equality on extracted text, not containment.
+    index("logs_attr_user_id_idx").on(
+      sql`(${table.attributes} ->> 'user_id')`,
+    ),
+
+    index("logs_attr_region_idx").on(
+      sql`(${table.attributes} ->> 'region')`,
+    ),
   ],
 );
 

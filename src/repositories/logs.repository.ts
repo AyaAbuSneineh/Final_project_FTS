@@ -24,7 +24,7 @@ async function insertLogChunk(
   const attributes = new Array<string>(rowCount);
 
   for (let index = start; index < end; index++) {
-    const entry = entries[index]!;
+    const entry = entries[index]!; // ! non-null assertion because we know the index is within bounds
     const targetIndex = index - start;
 
     timestamps[targetIndex] = entry.timestamp.toISOString();
@@ -33,7 +33,8 @@ async function insertLogChunk(
     messages[targetIndex] = entry.message;
     attributes[targetIndex] = JSON.stringify(entry.attributes);
   }
-
+  //Batch insert logs and update rollups in a single query to avoid race conditions between 
+  // the two operations. This ensures that the rollup counts are always consistent with the inserted logs.
   await client.query(
     `
       WITH input_rows AS (
@@ -88,6 +89,15 @@ async function insertLogChunk(
         1,
         service,
         level
+      -- Deterministic order so every concurrent flush worker locks rollup rows in
+      -- the same sequence. Without this, two workers whose chunks both touch the
+      -- same two-or-more (bucket, service, level) rows in different orders could
+      -- deadlock (Postgres aborts one transaction, its whole chunk would be
+      -- rejected and need a client retry even though no data was actually lost).
+      ORDER BY
+        1,
+        service,
+        level
       ON CONFLICT (
         bucket_start,
         service,
@@ -121,7 +131,7 @@ export async function insertLogs(entries: ValidLogInput[]): Promise<void> {
       return;
     }
 
-    await client.query("BEGIN");
+    await client.query("BEGIN"); // means start a transaction
     transactionStarted = true;
 
     for (let start = 0; start < entries.length; start += chunkSize) {
@@ -133,12 +143,12 @@ export async function insertLogs(entries: ValidLogInput[]): Promise<void> {
       );
     }
 
-    await client.query("COMMIT");
+    await client.query("COMMIT"); // means save the changes made during the transaction to the database
     transactionStarted = false;
   } catch (error) {
     if (transactionStarted) {
       try {
-        await client.query("ROLLBACK");
+        await client.query("ROLLBACK"); // means restore the database to its previous state before the transaction began
       } catch (rollbackError) {
         console.error("Failed to rollback log insert transaction:", rollbackError);
       }
@@ -151,7 +161,18 @@ export async function insertLogs(entries: ValidLogInput[]): Promise<void> {
 }
 
 export async function deleteExpiredLogsBatch(cutoff: Date, batchSize: number): Promise<number> {
-  const result = await pool.query(
+  // Deleting from `logs` alone leaves log_count_rollups_1m holding counts for rows
+  // that no longer exist, so an eligible aggregate query would report phantom data
+  // for time ranges retention already removed. This adjusts rollups in the same
+  // statement as the delete, decrementing each affected bucket by exactly the rows
+  // that batch actually removed (never a blind "delete the whole bucket", since the
+  // retention cutoff can fall in the middle of a still-partially-live minute
+  // bucket), and drops any rollup row that reaches zero so the rollup table doesn't
+  // outlive the raw data it summarizes.
+  const result = await pool.query<{
+    deleted_count: string;
+    rollup_rows_removed: string;
+  }>(
     `
       WITH expired AS (
         SELECT ctid
@@ -160,12 +181,54 @@ export async function deleteExpiredLogsBatch(cutoff: Date, batchSize: number): P
         ORDER BY "timestamp" ASC
         LIMIT $2
         FOR UPDATE SKIP LOCKED
+      ),
+      deleted AS (
+        DELETE FROM logs
+        WHERE ctid IN (
+          SELECT ctid
+          FROM expired
+        )
+        RETURNING "timestamp", service, level
+      ),
+      bucket_counts AS (
+        SELECT
+          date_bin(
+            interval '1 minute',
+            "timestamp",
+            timestamptz '1970-01-01 00:00:00+00'
+          ) AS bucket_start,
+          service,
+          level,
+          count(*)::bigint AS removed_count
+        FROM deleted
+        GROUP BY 1, service, level
+        -- Same deterministic-lock-order reasoning as the insert path: this is the
+        -- only place besides ingestion that writes to log_count_rollups_1m, so it
+        -- follows the same (bucket_start, service, level) lock order to rule out a
+        -- deadlock against a concurrent insert upsert touching an overlapping row.
+        ORDER BY 1, service, level
+      ),
+      rollup_update AS (
+        UPDATE log_count_rollups_1m AS r
+        SET log_count = r.log_count - bc.removed_count
+        FROM bucket_counts bc
+        WHERE r.bucket_start = bc.bucket_start
+          AND r.service = bc.service
+          AND r.level = bc.level
+        RETURNING r.bucket_start, r.service, r.level, r.log_count
+      ),
+      rollup_cleanup AS (
+        DELETE FROM log_count_rollups_1m
+        WHERE (bucket_start, service, level) IN (
+          SELECT bucket_start, service, level
+          FROM rollup_update
+          WHERE log_count <= 0
+        )
+        RETURNING 1
       )
-      DELETE FROM logs
-      WHERE ctid IN (
-        SELECT ctid
-        FROM expired
-      )
+      SELECT
+        (SELECT count(*) FROM deleted)::bigint AS deleted_count,
+        (SELECT count(*) FROM rollup_cleanup)::bigint AS rollup_rows_removed
     `,
     [
       cutoff.toISOString(),
@@ -173,7 +236,7 @@ export async function deleteExpiredLogsBatch(cutoff: Date, batchSize: number): P
     ],
   );
 
-  return result.rowCount ?? 0;
+  return Number(result.rows[0]?.deleted_count ?? 0);
 }
 
 export async function findLogs(filters: LogQueryFilters){

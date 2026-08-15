@@ -6,9 +6,13 @@ import { errorMiddleware } from "./middleware/error.middleware.js";
 
 export const app = express();
 
-//app.use(express.json());
+// 10,000 logs (MAX_LOGS_PER_BATCH) at a realistic ~1KB/entry (message + a few
+// attributes) is already ~10MB — 5mb was rejecting legitimately-sized full batches
+// with 413 before validation ever ran. This doesn't cover the pathological worst
+// case (every log maxed out on message/attribute limits, which is a memory
+// problem independent of this limit), just realistic traffic.
 app.use(express.json({
-    limit: "5mb",
+    limit: "10mb",
   }),
 );
 

@@ -1,3 +1,4 @@
+
 export interface IngestionConfig {
   maxLogsPerBatch: number;
   insertChunkSize: number;

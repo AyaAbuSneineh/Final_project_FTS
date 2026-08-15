@@ -37,6 +37,16 @@ services:
     container_name: log_postgres
     restart: always
 
+    # pg_stat_statements requires shared_preload_libraries at server start (it can't be
+    # loaded via CREATE EXTENSION alone). This is purely observability — near-zero
+    # overhead, no behavior change — and lets per-query-shape CPU/time/call-count be
+    # measured directly instead of inferred, which several of the audit's findings
+    # (e.g. how much CPU cost is scan-bound vs insert-bound) explicitly needed.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
