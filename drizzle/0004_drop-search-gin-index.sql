@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS "logs_search_gin_idx";

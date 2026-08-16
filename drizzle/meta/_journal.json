@@ -22,6 +22,27 @@
       "when": 1786806525908,
       "tag": "0002_fantastic_dexter_bennett",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786846588084,
+      "tag": "0003_dizzy_texas_twister",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786846975810,
+      "tag": "0004_drop-search-gin-index",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786848423865,
+      "tag": "0005_left_rumiko_fujikawa",
+      "breakpoints": true
     }
   ]
 }
