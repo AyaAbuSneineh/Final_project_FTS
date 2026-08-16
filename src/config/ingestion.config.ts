@@ -18,7 +18,7 @@ const DEFAULT_MAX_LOGS_PER_BATCH = 10_000;
 const DEFAULT_INSERT_CHUNK_SIZE = 10_000;
 const DEFAULT_BATCHING_ENABLED = true;
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
-const DEFAULT_FLUSH_MAX_LOGS = 5_000;
+const DEFAULT_FLUSH_MAX_LOGS = 10_000;
 const DEFAULT_MAX_BUFFERED_LOGS = 100_000;
 // A single Postgres CPU core cannot truly parallelize CPU-bound work, so this
 // stays small: enough to stop one slow flush from head-of-line-blocking every
