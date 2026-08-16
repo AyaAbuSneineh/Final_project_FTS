@@ -23,7 +23,7 @@ const DEFAULT_MAX_BUFFERED_LOGS = 100_000;
 // A single Postgres CPU core cannot truly parallelize CPU-bound work, so this
 // stays small: enough to stop one slow flush from head-of-line-blocking every
 // other request, not so many that they just add lock/context-switch contention.
-const DEFAULT_MAX_CONCURRENT_FLUSHES = 4;
+const DEFAULT_MAX_CONCURRENT_FLUSHES = 2;
 const DEFAULT_MAX_SERVICE_LENGTH = 256;
 const DEFAULT_MAX_MESSAGE_LENGTH = 8_192;
 const DEFAULT_MAX_ATTRIBUTES_PER_LOG = 50;
