@@ -259,8 +259,77 @@ type AggregateLogRow = {
   count: number;
 };
 
-function isMinuteAligned(date: Date): boolean {
-  return date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0;
+const MINUTE_MS = 60 * 1000;
+
+type TimeRange = {
+  start: Date;
+  end: Date;
+};
+
+function floorToMinute(date: Date): Date {
+  return new Date(Math.floor(date.getTime() / MINUTE_MS) * MINUTE_MS);
+}
+
+function ceilToMinute(date: Date): Date {
+  const floored = floorToMinute(date);
+
+  if (floored.getTime() === date.getTime()) {
+    return floored;
+  }
+
+  return new Date(floored.getTime() + MINUTE_MS);
+}
+
+function getAggregationRanges(since: Date, until: Date): {
+  rawRanges: TimeRange[];
+  rollupStart: Date;
+  rollupEnd: Date;
+} {
+  if (since.getTime() >= until.getTime()) {
+    return {
+      rawRanges: [],
+      rollupStart: since,
+      rollupEnd: since,
+    };
+  }
+
+  const rollupStart = ceilToMinute(since);
+  const rollupEnd = floorToMinute(until);
+
+  if (rollupStart.getTime() >= rollupEnd.getTime()) {
+    return {
+      rawRanges: [
+        {
+          start: since,
+          end: until,
+        },
+      ],
+      rollupStart: since,
+      rollupEnd: since,
+    };
+  }
+
+  const rawRanges: TimeRange[] = [];
+
+  if (since.getTime() < rollupStart.getTime()) {
+    rawRanges.push({
+      start: since,
+      end: rollupStart,
+    });
+  }
+
+  if (rollupEnd.getTime() < until.getTime()) {
+    rawRanges.push({
+      start: rollupEnd,
+      end: until,
+    });
+  }
+
+  return {
+    rawRanges,
+    rollupStart,
+    rollupEnd,
+  };
 }
 
 function getRollupBucketInterval(bucket: AggregateBucket): string {
@@ -279,12 +348,22 @@ function getRollupBucketInterval(bucket: AggregateBucket): string {
   }
 }
 
+function buildSqlBucketExpression(bucket: AggregateBucket, sourceExpression: string): string {
+  const interval = getRollupBucketInterval(bucket);
+
+  return `
+    date_bin(
+      interval '${interval}',
+      ${sourceExpression},
+      timestamptz '1970-01-01 00:00:00+00'
+    )
+  `;
+}
+
 function canUseRollups(filters: AggregateQueryFilters): boolean {
   return (
     filters.q === undefined &&
-    filters.attributes.length === 0 &&
-    isMinuteAligned(filters.since) &&
-    isMinuteAligned(filters.until)
+    filters.attributes.length === 0
   );
 }
 
@@ -293,43 +372,86 @@ async function aggregateLogsFromRollups(filters: AggregateQueryFilters): Promise
     return null;
   }
 
-  const params: unknown[] = [
-    filters.since.toISOString(),
-    filters.until.toISOString(),
-  ];
-  const conditions = [
-    "bucket_start >= $1::timestamptz",
-    "bucket_start < $2::timestamptz",
+  const {
+    rawRanges,
+    rollupStart,
+    rollupEnd,
+  } = getAggregationRanges(filters.since, filters.until);
+
+  if (
+    rawRanges.length === 0 &&
+    rollupStart.getTime() >= rollupEnd.getTime()
+  ) {
+    return [];
+  }
+
+  const params: unknown[] = [];
+  const pushParam = (value: unknown): string => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
+  const rawRangeConditions = rawRanges.map((range) => {
+    const startParam = pushParam(range.start.toISOString());
+    const endParam = pushParam(range.end.toISOString());
+
+    return `(l."timestamp" >= ${startParam}::timestamptz AND l."timestamp" < ${endParam}::timestamptz)`;
+  });
+
+  const rawConditions = [
+    rawRangeConditions.length > 0
+      ? `(${rawRangeConditions.join(" OR ")})`
+      : "false",
   ];
 
+  let rollupConditions: string[];
+
+  if (rollupStart.getTime() < rollupEnd.getTime()) {
+    const rollupStartParam = pushParam(rollupStart.toISOString());
+    const rollupEndParam = pushParam(rollupEnd.toISOString());
+
+    rollupConditions = [
+      `r.bucket_start >= ${rollupStartParam}::timestamptz`,
+      `r.bucket_start < ${rollupEndParam}::timestamptz`,
+    ];
+  } else {
+    rollupConditions = [
+      "false",
+    ];
+  }
+
   if (filters.service !== undefined) {
-    params.push(filters.service);
-    conditions.push(`service = $${params.length}`);
+    const serviceParam = pushParam(filters.service);
+
+    rawConditions.push(`l.service = ${serviceParam}`);
+    rollupConditions.push(`r.service = ${serviceParam}`);
   }
 
   if (filters.level !== undefined) {
-    params.push(filters.level);
-    conditions.push(`level = $${params.length}`);
+    const levelParam = pushParam(filters.level);
+
+    rawConditions.push(`l.level = ${levelParam}`);
+    rollupConditions.push(`r.level = ${levelParam}`);
   }
 
-  const interval = getRollupBucketInterval(filters.bucket);
-  const bucketExpression = `
-    date_bin(
-      interval '${interval}',
-      bucket_start,
-      timestamptz '1970-01-01 00:00:00+00'
-    )
-  `;
+  const rawBucketExpression = buildSqlBucketExpression(
+    filters.bucket,
+    'l."timestamp"',
+  );
+  const rollupBucketExpression = buildSqlBucketExpression(
+    filters.bucket,
+    "r.bucket_start",
+  );
 
-  let groupExpression = "null::text";
-  let groupByExpression = bucketExpression;
+  let rawGroupExpression = "null::text";
+  let rollupGroupExpression = "null::text";
 
   if (filters.groupBy === "service") {
-    groupExpression = "service";
-    groupByExpression = `${bucketExpression}, service`;
+    rawGroupExpression = "l.service";
+    rollupGroupExpression = "r.service";
   } else if (filters.groupBy === "level") {
-    groupExpression = "level";
-    groupByExpression = `${bucketExpression}, level`;
+    rawGroupExpression = "l.level";
+    rollupGroupExpression = "r.level";
   }
 
   const result = await pool.query<{
@@ -338,14 +460,38 @@ async function aggregateLogsFromRollups(filters: AggregateQueryFilters): Promise
     count: string;
   }>(
     `
+      WITH raw_edges AS (
+        SELECT
+          ${rawBucketExpression} AS bucket_start,
+          ${rawGroupExpression} AS "group",
+          count(*)::bigint AS log_count
+        FROM logs l
+        WHERE ${rawConditions.join(" AND ")}
+        GROUP BY 1, 2
+      ),
+      rollup_middle AS (
+        SELECT
+          ${rollupBucketExpression} AS bucket_start,
+          ${rollupGroupExpression} AS "group",
+          sum(r.log_count)::bigint AS log_count
+        FROM log_count_rollups_1m r
+        WHERE ${rollupConditions.join(" AND ")}
+        GROUP BY 1, 2
+      ),
+      combined AS (
+        SELECT bucket_start, "group", log_count
+        FROM raw_edges
+        UNION ALL
+        SELECT bucket_start, "group", log_count
+        FROM rollup_middle
+      )
       SELECT
-        ${bucketExpression} AS bucket_start,
-        ${groupExpression} AS "group",
+        bucket_start,
+        "group",
         sum(log_count)::bigint AS count
-      FROM log_count_rollups_1m
-      WHERE ${conditions.join(" AND ")}
-      GROUP BY ${groupByExpression}
-      ORDER BY ${bucketExpression} ASC
+      FROM combined
+      GROUP BY bucket_start, "group"
+      ORDER BY bucket_start ASC
     `,
     params,
   );
