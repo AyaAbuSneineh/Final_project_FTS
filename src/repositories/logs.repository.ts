@@ -8,7 +8,7 @@ import { buildLogConditions } from "../query-builders/logs.query-builder.js";
 import {desc,asc,count,sql} from "drizzle-orm";
 
 import {buildAggregateConditions,buildBucketExpression} from "../query-builders/aggregation.query-builder.js";
-import { pool } from "../db/client.js";
+import { ingestionPool, pool } from "../db/client.js";
 
 async function insertLogChunk(
   client: PoolClient,
@@ -121,7 +121,7 @@ export async function insertLogs(entries: ValidLogInput[]): Promise<void> {
     return;
   }
 
-  const client = await pool.connect();
+  const client = await ingestionPool.connect();
   const chunkSize = ingestionConfig.insertChunkSize;
   let transactionStarted = false;
 

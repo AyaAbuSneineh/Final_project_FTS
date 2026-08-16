@@ -45,9 +45,6 @@ export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
   for (const attribute of filters.attributes) {
     conditions.push(
       sql`${logs.attributes} ->> ${attribute.key} = ${attribute.value}`,
-      // expression logs.attributes ->> attribute.key = attribute.value
-      // --> JSONB operator ->> extracts the value of the specified key from the JSONB column logs.attributes as text
-      // -> JSON operator -> extracts the value of the specified key from the JSONB column logs.attributes as JSON
     );
   }
 
