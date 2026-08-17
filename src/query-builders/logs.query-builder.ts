@@ -44,8 +44,8 @@ export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
   
   for (const attribute of filters.attributes) {
     conditions.push(
-    buildAttributeCondition(attribute.key, attribute.value),
-    );
+    sql`${logs.attributes} ->> ${attribute.key} = ${attribute.value}`,
+  );
   }
 
   if (filters.cursor !== undefined) { 
@@ -57,39 +57,4 @@ export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
   }
   // Combine all conditions using AND operator
   return and(...conditions);
-}
-
-export function buildAttributeCondition(
-  key: string,
-  value: string,
-): SQL {
-  const conditions: SQL[] = [
-    // JSON string
-    sql`${logs.attributes} @> jsonb_build_object(
-      ${key},
-      to_jsonb(${value}::text)
-    )`,
-  ];
-
-  // JSON number
-  if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) {
-    conditions.push(
-      sql`${logs.attributes} @> jsonb_build_object(
-        ${key},
-        to_jsonb(${value}::numeric)
-      )`,
-    );
-  }
-
-  // JSON boolean
-  if (value === "true" || value === "false") {
-    conditions.push(
-      sql`${logs.attributes} @> jsonb_build_object(
-        ${key},
-        to_jsonb(${value}::boolean)
-      )`,
-    );
-  }
-
-  return or(...conditions)!;
 }

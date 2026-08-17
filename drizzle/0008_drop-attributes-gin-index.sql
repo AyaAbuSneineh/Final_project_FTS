@@ -1,0 +1,1 @@
+DROP INDEX "logs_attributes_gin_idx";

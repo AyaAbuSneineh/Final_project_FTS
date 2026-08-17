@@ -57,6 +57,13 @@
       "when": 1786923758419,
       "tag": "0007_sync-search-indexes-schema",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786932548148,
+      "tag": "0008_drop-attributes-gin-index",
+      "breakpoints": true
     }
   ]
 }
