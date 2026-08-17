@@ -1,4 +1,4 @@
-import {and,eq,gte,lt,sql,type SQL,} from "drizzle-orm";
+import {and,eq,gte,lt,sql,type SQL,or} from "drizzle-orm";
 
 import { logs } from "../db/schema.js";
 import type { LogQueryFilters } from "../types.js";
@@ -44,7 +44,7 @@ export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
   
   for (const attribute of filters.attributes) {
     conditions.push(
-      sql`${logs.attributes} ->> ${attribute.key} = ${attribute.value}`,
+    buildAttributeCondition(attribute.key, attribute.value),
     );
   }
 
@@ -57,4 +57,39 @@ export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
   }
   // Combine all conditions using AND operator
   return and(...conditions);
+}
+
+export function buildAttributeCondition(
+  key: string,
+  value: string,
+): SQL {
+  const conditions: SQL[] = [
+    // JSON string
+    sql`${logs.attributes} @> jsonb_build_object(
+      ${key},
+      to_jsonb(${value}::text)
+    )`,
+  ];
+
+  // JSON number
+  if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) {
+    conditions.push(
+      sql`${logs.attributes} @> jsonb_build_object(
+        ${key},
+        to_jsonb(${value}::numeric)
+      )`,
+    );
+  }
+
+  // JSON boolean
+  if (value === "true" || value === "false") {
+    conditions.push(
+      sql`${logs.attributes} @> jsonb_build_object(
+        ${key},
+        to_jsonb(${value}::boolean)
+      )`,
+    );
+  }
+
+  return or(...conditions)!;
 }

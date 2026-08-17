@@ -4,6 +4,7 @@ import { logs } from "../db/schema.js";
 
 import type {AggregateBucket,AggregateQueryFilters} from "../types.js";
 import { escapeLikePattern } from "../utils/sql.js";
+import {buildAttributeCondition} from "./logs.query-builder.js"
 
 export function buildBucketExpression(bucket: AggregateBucket): SQL<Date> {
   switch (bucket) {
@@ -70,8 +71,8 @@ export function buildAggregateConditions(filters: AggregateQueryFilters): SQL | 
 
   for (const attribute of filters.attributes) {
     conditions.push(
-      sql`${logs.attributes} ->> ${attribute.key} = ${attribute.value}`,
-    );
+    buildAttributeCondition(attribute.key, attribute.value),
+  );
   }
 
   if (filters.q !== undefined) {

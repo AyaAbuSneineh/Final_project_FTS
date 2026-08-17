@@ -62,6 +62,15 @@ export const logs = pgTable("logs",{
       table.timestamp.desc().nullsFirst(),
       table.id.desc().nullsFirst(),
     ),
+    index("logs_message_trgm_idx").using(
+      "gin",
+      sql`${table.message} gin_trgm_ops`,
+    ),
+
+    index("logs_attributes_gin_idx").using(
+      "gin",
+      sql`${table.attributes} jsonb_path_ops`,
+    ),
   ],
 );
 
