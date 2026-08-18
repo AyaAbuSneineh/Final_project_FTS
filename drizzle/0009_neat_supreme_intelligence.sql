@@ -1,0 +1,1 @@
+DROP INDEX "log_count_rollups_1m_bucket_idx";

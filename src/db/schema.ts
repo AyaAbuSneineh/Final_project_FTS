@@ -90,9 +90,5 @@ export const logCountRollups1m = pgTable("log_count_rollups_1m", {
         table.level,
       ],
     }),
-
-    index("log_count_rollups_1m_bucket_idx").on(
-      table.bucketStart,
-    ),
   ],
 );
