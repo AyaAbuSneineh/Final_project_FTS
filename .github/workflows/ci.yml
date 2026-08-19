@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-and-test:
+    name: Build, typecheck, unit + integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: logs_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d logs_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/logs_db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Integration tests (real Postgres, migrations applied at runtime)
+        run: npm run test:integration
+
+  contract-smoke-test:
+    name: docker compose up + required-endpoint smoke test
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the full stack exactly as graded (docker compose up)
+        run: docker compose up -d --build
+
+      - name: Wait for /health to report ready
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
+            if [ "$code" = "200" ]; then
+              echo "Service healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Service never became healthy"
+          docker compose logs
+          exit 1
+
+      - name: POST /logs accepts a batch with one valid and one invalid entry
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/logs \
+            -H "Content-Type: application/json" \
+            -d '{
+              "logs": [
+                {"timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'", "level": "error", "service": "ci-smoke", "message": "payment declined", "attributes": {"user_id": "42"}},
+                {"timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'", "level": "critical", "service": "ci-smoke", "message": "bad level"}
+              ]
+            }')
+          body=$(echo "$response" | head -n1)
+          code=$(echo "$response" | tail -n1)
+          echo "$body"
+          [ "$code" = "200" ]
+          echo "$body" | grep -q '"accepted":1'
+          echo "$body" | grep -q '"index":1'
+
+      - name: GET /logs returns the ingested entry
+        run: |
+          sleep 1
+          response=$(curl -s -w "\n%{http_code}" "http://localhost:8080/logs?service=ci-smoke")
+          body=$(echo "$response" | head -n1)
+          code=$(echo "$response" | tail -n1)
+          echo "$body"
+          [ "$code" = "200" ]
+          echo "$body" | grep -q "payment declined"
+
+      - name: GET /logs/aggregate returns bucketed counts
+        run: |
+          since=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)
+          until=$(date -u -d '1 hour' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+1H +%Y-%m-%dT%H:%M:%SZ)
+          response=$(curl -s -w "\n%{http_code}" "http://localhost:8080/logs/aggregate?service=ci-smoke&bucket=1h&since=${since}&until=${until}")
+          body=$(echo "$response" | head -n1)
+          code=$(echo "$response" | tail -n1)
+          echo "$body"
+          [ "$code" = "200" ]
+          echo "$body" | grep -q '"buckets"'
+
+      - name: Invalid query parameters return 400 with an error body
+        run: |
+          code=$(curl -s -o /tmp/resp.json -w "%{http_code}" "http://localhost:8080/logs?level=critical")
+          cat /tmp/resp.json
+          [ "$code" = "400" ]
+          grep -q '"error"' /tmp/resp.json
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

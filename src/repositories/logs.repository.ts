@@ -59,14 +59,28 @@ async function insertLogChunk(
           level,
           service,
           message,
-          attributes
+          attributes,
+          attributes_text
         )
         SELECT
           "timestamp",
           level,
           service,
           message,
-          attributes
+          attributes,
+          -- Computed here (Postgres has CPU headroom under the resource limits;
+          -- the app container is the tighter budget) rather than in the app:
+          -- every value in attributes re-expressed as text, so attr.<key>
+          -- equality can be answered by logs_attributes_text_gin_idx. COALESCE
+          -- covers the empty-attributes case, where jsonb_each has no rows to
+          -- aggregate.
+          COALESCE(
+            (
+              SELECT jsonb_object_agg(entry.key, entry.value #>> '{}')
+              FROM jsonb_each(attributes) AS entry
+            ),
+            '{}'::jsonb
+          )
         FROM input_rows
       )
       INSERT INTO log_count_rollups_1m (

@@ -2,7 +2,6 @@ import type { Request ,Response,NextFunction} from "express";
 import {BadRequestError, UnauthorizedError, ForbiddenError, NotFoundError, ServiceUnavailableError} from "../errors.js";
 
 export function errorMiddleware(err :Error,req:Request,res :Response,next :NextFunction) {
-    //console.log(err) ;
     if ("type" in err &&err.type === "entity.parse.failed") {
         res.status(400).json({error: "malformed JSON",});
         return;
@@ -29,6 +28,7 @@ export function errorMiddleware(err :Error,req:Request,res :Response,next :NextF
         return;
     }
     else {
+        console.error("Unhandled error:", err);
         res.status(500).json({error:"Something went wrong on our end"}) ;
         return;
     }

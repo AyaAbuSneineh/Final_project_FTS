@@ -67,10 +67,14 @@ export function buildAggregateConditions(filters: AggregateQueryFilters): SQL | 
     );
   }
 
-  for (const attribute of filters.attributes) {
+  if (filters.attributes.length > 0) {
+    const attributeMatch = Object.fromEntries(
+      filters.attributes.map((attribute) => [attribute.key, attribute.value]),
+    );
+
     conditions.push(
-    sql`${logs.attributes} ->> ${attribute.key} = ${attribute.value}`,
-  );
+      sql`${logs.attributesText} @> ${JSON.stringify(attributeMatch)}::jsonb`,
+    );
   }
 
   if (filters.q !== undefined) {

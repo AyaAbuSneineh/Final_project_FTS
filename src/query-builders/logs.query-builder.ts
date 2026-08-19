@@ -42,10 +42,18 @@ export function buildLogConditions(filters: LogQueryFilters): SQL | undefined {
     );
   }
   
-  for (const attribute of filters.attributes) {
+  if (filters.attributes.length > 0) {
+    // A single containment probe against the all-text shadow column
+    // (attributesText) instead of one `->>` comparison per key: `->>` can't use
+    // an index at all, while `@>` is answered by logs_attributes_text_gin_idx
+    // in one lookup, even with several attr.<key> filters combined.
+    const attributeMatch = Object.fromEntries(
+      filters.attributes.map((attribute) => [attribute.key, attribute.value]),
+    );
+
     conditions.push(
-    sql`${logs.attributes} ->> ${attribute.key} = ${attribute.value}`,
-  );
+      sql`${logs.attributesText} @> ${JSON.stringify(attributeMatch)}::jsonb`,
+    );
   }
 
   if (filters.cursor !== undefined) { 
